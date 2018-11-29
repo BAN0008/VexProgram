@@ -8,16 +8,19 @@ vex::competition Competition;
 #define AUTO_MOVING 3
 #define RAISING 0
 #define LOWERING 1
+#define WINDING 0
+#define FIRING 1
+#define READY 2
 
 int arm_state = STOPPED;
 int arm_direction = STOPPED;
-void flip_claw()
+void flip_claw(int speed)
 {
     static bool flipped = false;
     int current_angle;
     if (flipped)
     {
-        current_angle = 300;
+        current_angle = 180;
     }
     else
     {
@@ -26,12 +29,12 @@ void flip_claw()
     
     if (flipped && (fabs(mtr_claw_rotate.rotation(vex::rotationUnits::deg) - current_angle) < 2.0f))
     {
-        mtr_claw_rotate.startRotateTo(0, vex::rotationUnits::deg, 100, vex::velocityUnits::pct);
+        mtr_claw_rotate.startRotateTo(0, vex::rotationUnits::deg, speed, vex::velocityUnits::pct);
         flipped = false;
     }
     else
     {
-        mtr_claw_rotate.startRotateTo(300, vex::rotationUnits::deg, 100, vex::velocityUnits::pct);
+        mtr_claw_rotate.startRotateTo(180, vex::rotationUnits::deg, speed, vex::velocityUnits::pct);
         flipped = true;
     }
     vex::task::sleep(250);
@@ -65,6 +68,9 @@ void pre_auton()
     Controller1.ButtonR1.released(arm_raise_released);
     Controller1.ButtonR2.pressed(arm_lower_pressed);
     Controller1.ButtonR2.released(arm_lower_released);
+    
+    mtr_launcher.setStopping(vex::brakeType::hold);
+    mtr_claw_rotate.setStopping(vex::brakeType::hold);
 }
 
 void arm_set_height(int height)
@@ -125,9 +131,9 @@ void usercontrol()
         }
 
         //Flipping
-        if (Controller1.ButtonX.pressing())
+        if (Controller1.ButtonA.pressing())
         {
-            flip_claw();
+            flip_claw(100);
         }
 
         //Lifting
@@ -162,18 +168,80 @@ void usercontrol()
         }
         
         //Launcher
-        if (Controller1.ButtonL1.pressing())
+        static int launcher_status = WINDING;
+        static int reached_resistance = 0;
+        switch (launcher_status)
         {
-            mtr_launcher.spin(vex::directionType::fwd);
+            case WINDING:
+                Brain.Screen.clearScreen();
+                if (reached_resistance == 0) Brain.Screen.printAt(64, 64,"%f - 0", mtr_launcher.power(vex::powerUnits::watt));
+                if (reached_resistance == 1) Brain.Screen.printAt(64, 64,"%f - 1", mtr_launcher.power(vex::powerUnits::watt));
+                if (reached_resistance == 2) Brain.Screen.printAt(64, 64,"%f - 2", mtr_launcher.power(vex::powerUnits::watt));
+                vex::task::sleep(100);
+                if (reached_resistance == 1)
+                {
+                    reached_resistance = 2;
+                    mtr_launcher.resetRotation();
+                    //mtr_launcher.startRotateFor(2800, vex::rotationUnits::deg, 100, vex::velocityUnits::pct);
+                    mtr_launcher.spin(vex::directionType::fwd, 100, vex::velocityUnits::pct);
+                    
+                }
+                else
+                {
+                    if (reached_resistance == 0)
+                    {
+                        mtr_launcher.spin(vex::directionType::fwd, 100, vex::velocityUnits::pct);
+                        //Brain.Screen.clearSc reen();
+                        //Brain.Screen.printAt(64, 64,"%f - %f", vex::timer::system(), mtr_launcher.power(vex::powerUnits::watt));
+                        //vex::task::sleep(100);
+                        if (mtr_launcher.power(vex::powerUnits::watt) > 3.5f)
+                        {
+                            Controller1.Screen.print("RES");
+                            reached_resistance = 1;
+                        }
+                    }
+                    if (reached_resistance == 2)
+                    {
+                        if (mtr_launcher.rotation(vex::rotationUnits::deg) > 2350)
+                        {
+                            mtr_launcher.stop(vex::brakeType::hold);
+                            launcher_status = READY;
+                            Controller1.Screen.print("READY");
+                        }
+                    }
+                }
+                break;
+            case FIRING:
+                //mtr_launcher.startRotateFor(200, vex::rotationUnits::deg, 100, vex::velocityUnits::pct);
+                mtr_launcher.spin(vex::directionType::fwd, 100, vex::velocityUnits::pct);
+                if (mtr_launcher.rotation(vex::rotationUnits::deg) > 300)
+                {
+                    mtr_launcher.stop(vex::brakeType::hold);
+                    reached_resistance = 0;
+                    launcher_status = WINDING;
+                    Controller1.Screen.print("WINDING");
+                }
+                break;
+            case READY:
+                if (Controller1.ButtonL1.pressing())
+                {
+                    launcher_status = FIRING;
+                    mtr_launcher.resetRotation();
+                    Controller1.Screen.print("FIRING");
+                }
+        }
+        /*if (Controller1.ButtonL1.pressing())
+        {
+            mtr_launcher.spin(vex::directionType::fwd, 100, vex::velocityUnits::pct);
         }
         if (Controller1.ButtonL2.pressing())
         {
-            mtr_launcher.spin(vex::directionType::rev);
+            mtr_launcher.spin(vex::directionType::rev, 100, vex::velocityUnits::pct);
         }
         if (!Controller1.ButtonL1.pressing() && !Controller1.ButtonL2.pressing())
         {
             mtr_launcher.stop(vex::brakeType::hold);
-        }
+        }*/
 
         //Preset Heights
         if (Controller1.ButtonUp.pressing())
@@ -187,6 +255,22 @@ void usercontrol()
         if (Controller1.ButtonDown.pressing())
         {
             arm_set_height(1);
+        }
+        
+        if (Controller1.ButtonX.pressing())
+        {
+            arm_set_height(3);
+            flip_claw(50);
+        }
+        if (Controller1.ButtonY.pressing())
+        {
+            arm_set_height(2);
+            flip_claw(50);
+        }
+        if (Controller1.ButtonB.pressing())
+        {
+            arm_set_height(1);
+            flip_claw(50);
         }
     }
 }
