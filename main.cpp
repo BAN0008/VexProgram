@@ -2,18 +2,49 @@
 
 vex::competition Competition;
 
-#define STOPPED 0
-#define MOVING  1
-#define SLOWING 2
-#define AUTO_MOVING 3
-#define RAISING 0
-#define LOWERING 1
 #define WINDING 0
 #define FIRING 1
 #define READY 2
 
-int arm_state = STOPPED;
-int arm_direction = STOPPED;
+int sgn(int a)
+{
+    if (a > 0)
+    {
+        return 1;
+    }
+    if (a < 0)
+    {
+        return -1;
+    }
+    return 0;
+}
+
+void turn_time(int angle)
+{
+    mtr_front_right.spin(vex::directionType::rev, 100 * sgn(angle), vex::velocityUnits::pct);
+    mtr_front_left.spin(vex::directionType::fwd, 100 * sgn(angle), vex::velocityUnits::pct);
+    mtr_back_right.spin(vex::directionType::rev, 100 * sgn(angle), vex::velocityUnits::pct);
+    mtr_back_left.spin(vex::directionType::fwd, 100 * sgn(angle), vex::velocityUnits::pct);
+    vex::task::sleep(abs(angle) * 6); //vex::task::sleep(abs(angle) * 6); turns 90 deg
+    mtr_front_right.stop(vex::brakeType::brake);
+    mtr_front_left.stop(vex::brakeType::brake);
+    mtr_back_right.stop(vex::brakeType::brake);
+    mtr_back_left.stop(vex::brakeType::brake);
+}
+
+void drive_time(int distance)
+{
+    mtr_front_right.spin(vex::directionType::fwd, 100 * sgn(distance), vex::velocityUnits::pct);
+    mtr_front_left.spin(vex::directionType::fwd, 100 * sgn(distance), vex::velocityUnits::pct);
+    mtr_back_right.spin(vex::directionType::fwd, 100 * sgn(distance), vex::velocityUnits::pct);
+    mtr_back_left.spin(vex::directionType::fwd, 100 * sgn(distance), vex::velocityUnits::pct);
+    vex::task::sleep(abs(distance) * 16.8); //vex::task::sleep(abs(angle) * 16.8); drives 30cm
+    mtr_front_right.stop(vex::brakeType::brake);
+    mtr_front_left.stop(vex::brakeType::brake);
+    mtr_back_right.stop(vex::brakeType::brake);
+    mtr_back_left.stop(vex::brakeType::brake);
+}
+
 void flip_claw(int speed)
 {
     static bool flipped = false;
@@ -40,74 +71,32 @@ void flip_claw(int speed)
     vex::task::sleep(250);
 }
 
-void arm_raise_pressed()
-{
-    arm_state = MOVING;
-    mtr_arm_left.spin(vex::directionType::fwd, 70, vex::velocityUnits::pct);
-    mtr_arm_right.spin(vex::directionType::fwd, 70, vex::velocityUnits::pct);
-}
-void arm_raise_released()
-{
-    arm_state = SLOWING;
-}
-void arm_lower_pressed()
-{
-    arm_state = MOVING;
-    mtr_arm_left.spin(vex::directionType::rev, 50, vex::velocityUnits::pct);
-    mtr_arm_right.spin(vex::directionType::rev, 50, vex::velocityUnits::pct);
-}
-void arm_lower_released()
-{
-    arm_state = SLOWING;
-}
-
 void pre_auton()
-{
-    //Set Button Callbacks
-    Controller1.ButtonR1.pressed(arm_raise_pressed);
-    Controller1.ButtonR1.released(arm_raise_released);
-    Controller1.ButtonR2.pressed(arm_lower_pressed);
-    Controller1.ButtonR2.released(arm_lower_released);
-    
+{   
     mtr_launcher.setStopping(vex::brakeType::hold);
     mtr_claw_rotate.setStopping(vex::brakeType::hold);
+    
+    mtr_arm_left.resetRotation();
+    mtr_arm_right.resetRotation();
 }
 
 void arm_set_height(int height)
 {
-    switch (height)
-    {
-        case 0:
-            mtr_arm_left.startRotateTo(0, vex::rotationUnits::deg, 100, vex::velocityUnits::pct);
-            mtr_arm_right.startRotateTo(0, vex::rotationUnits::deg, 100, vex::velocityUnits::pct);
-            break;
-        case 1:
-            mtr_arm_left.startRotateTo(100, vex::rotationUnits::deg, 100, vex::velocityUnits::pct);
-            mtr_arm_right.startRotateTo(100, vex::rotationUnits::deg, 100, vex::velocityUnits::pct);
-            break;
-        case 2:
-            mtr_arm_left.startRotateTo(500, vex::rotationUnits::deg, 100, vex::velocityUnits::pct);
-            mtr_arm_right.startRotateTo(500, vex::rotationUnits::deg, 100, vex::velocityUnits::pct);
-            break;
-        case 3:
-            mtr_arm_left.startRotateTo(900, vex::rotationUnits::deg, 100, vex::velocityUnits::pct);
-            mtr_arm_right.startRotateTo(900, vex::rotationUnits::deg, 100, vex::velocityUnits::pct);
-            break;
-    }
-    arm_state = AUTO_MOVING;
-    if (mtr_arm_left.direction() == vex::directionType::fwd)
-    {
-        arm_direction = RAISING;
-    }
-    else
-    {
-        arm_direction = LOWERING;
-    }
 }
 
 void autonomous()
 {
-    
+    drive_time(20);
+    vex::task::sleep(2000);
+    turn_time(-90);
+    vex::task::sleep(2000);
+    drive_time(50);
+    vex::task::sleep(2000);
+    turn_time(-90);
+    vex::task::sleep(2000);
+    drive_time(-160);
+    //drive_time(70);
+    //turn_time(45);
 }
 
 void usercontrol()
@@ -137,35 +126,25 @@ void usercontrol()
         }
 
         //Lifting
-        if (arm_state == SLOWING)
+        if (Controller1.ButtonR1.pressing())
         {
-            if (fabs(mtr_arm_left.velocity(vex::velocityUnits::pct)) > 5)
+            mtr_arm_left.spin(vex::directionType::fwd, 70, vex::velocityUnits::pct);
+            mtr_arm_right.spin(vex::directionType::fwd, 70, vex::velocityUnits::pct);
+        }
+        else
+        {
+            if (Controller1.ButtonR2.pressing())
             {
-                if (arm_direction == RAISING)
-                {
-                    mtr_arm_left.spin(vex::directionType::fwd, fabs(mtr_arm_left.velocity(vex::velocityUnits::pct)) - 1, vex::velocityUnits::pct);
-                    mtr_arm_right.spin(vex::directionType::fwd, fabs(mtr_arm_right.velocity(vex::velocityUnits::pct)) - 1, vex::velocityUnits::pct);
-                }
-                if (arm_direction == LOWERING)
-                {
-                    mtr_arm_left.spin(vex::directionType::rev, fabs(mtr_arm_left.velocity(vex::velocityUnits::pct)) - 1, vex::velocityUnits::pct);
-                    mtr_arm_right.spin(vex::directionType::rev, fabs(mtr_arm_right.velocity(vex::velocityUnits::pct)) - 1, vex::velocityUnits::pct);
-                }
+                mtr_arm_left.spin(vex::directionType::rev, 50, vex::velocityUnits::pct);
+                mtr_arm_right.spin(vex::directionType::rev, 50, vex::velocityUnits::pct);
             }
             else
             {
-                arm_state = STOPPED;
                 mtr_arm_left.stop(vex::brakeType::hold);
                 mtr_arm_right.stop(vex::brakeType::hold);
             }
         }
-        if (arm_state == AUTO_MOVING)
-        {
-            if (mtr_arm_left.isDone())
-            {
-                arm_state = SLOWING;
-            }
-        }
+        
         
         //Launcher
         static int launcher_status = WINDING;
